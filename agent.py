@@ -89,3 +89,4 @@ if __name__ == "__main__":
     run_agent("WWhat is the weather in Tokyo?")
     run_agent("what is the quickest way to add a new user to a Linux system?")
     run_agent("What is the best way to learn Python?")
+    run_agent("What is the latest news about AI?")
