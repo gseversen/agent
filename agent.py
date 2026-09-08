@@ -8,10 +8,11 @@ from datetime import datetime, timedelta
 
 # Loading and verification
 load_dotenv()
-print("API Key Loaded:", os.getenv("GROQ_API_KEY") is not None) 
+print("API Key Loaded:", os.getenv("GROQ_API_KEY") is not None)
+print("Google API Key Loaded:", os.getenv("GOOGLE_API_KEY") is not None)
 
 
-# This class handles my web search logic, using a search API called Tavily 
+# This class handles my web search logic, using a search API called Tavily
 class WebSearchTool:
     def __init__(self):
         self.client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -20,8 +21,8 @@ class WebSearchTool:
 
         print("Searching...")
         try:
-            response = self.client.search(query=query, search_depth="basic",include_answer=True)
-            
+            response = self.client.search(query=query, search_depth="basic", include_answer=True)
+
             # return answer or no answer found if not found
             return response.get("answer", "No answer found.")
 
@@ -30,7 +31,7 @@ class WebSearchTool:
             return "Failed to search"
 
 
-# a function calling the LLM API
+# a function calling the LLM API (Groq)
 def call_llm(prompt: str):
     try:
         response = requests.post(
@@ -52,13 +53,40 @@ def call_llm(prompt: str):
         return f"Error calling LLM API: {e}"
 
 
-# Agent Logic 
-def run_agent(user_query: str):
+# a function calling Google's Gemini API (Google AI Studio key)
+def call_gemini(prompt: str, model: str = "gemini-2.5-flash"):
+    try:
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": os.getenv("GOOGLE_API_KEY"),
+            },
+            json={
+                "contents": [
+                    {"parts": [{"text": prompt}]}
+                ]
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    except requests.exceptions.RequestException as e:
+        print("\nERROR")
+        return f"Error calling Gemini API: {e}"
+    except (KeyError, IndexError) as e:
+        print("\nERROR")
+        return f"Unexpected Gemini response format: {e} -- raw: {response.text}"
+
+
+# Agent Logic
+def run_agent(user_query: str, llm_fn=call_llm):
     print(f"\nUser Query: '{user_query}'")
 
-    #LLM decides if it requires a tool 
+    # LLM decides if it requires a tool
     routing_prompt = f"Do this query require real-time information that you do not have access to? If not, does the following query require a real-time web search to answer? Answer only with 'yes' or 'no'.\n\nQuery: {user_query}"
-    decision = call_llm(routing_prompt).strip().lower()
+    decision = llm_fn(routing_prompt).strip().lower()
     print(f"LLM Decision: Search required? -> {decision}")
 
     # search the web if need be.
@@ -75,18 +103,18 @@ def run_agent(user_query: str):
             "---\n\n"
             f"User Query: {user_query}"
         )
-        final_answer = call_llm(final_prompt)
+        final_answer = llm_fn(final_prompt)
     else:
         # If no search is needed, just get a direct answer.
-        final_answer = call_llm(user_query)
+        final_answer = llm_fn(user_query)
 
     print("\nFinal Answer:")
     print(final_answer)
 
 
-
 if __name__ == "__main__":
-    run_agent("WWhat is the weather in Tokyo?")
-    run_agent("what is the quickest way to add a new user to a Linux system?")
-    run_agent("What is the best way to learn Python?")
-    run_agent("What is the latest news about AI?")
+    # Use Groq (original behavior)
+    run_agent("What is the weather in Tokyo?")
+
+    # Use Gemini instead, just by swapping the llm_fn
+    run_agent("What is the latest news about AI?", llm_fn=call_gemini)
