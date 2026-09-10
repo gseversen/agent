@@ -12,7 +12,8 @@ print("API Key Loaded:", os.getenv("GROQ_API_KEY") is not None)
 print("Google API Key Loaded:", os.getenv("GOOGLE_API_KEY") is not None)
 
 
-# This class handles my web search logic, using a search API called Tavily
+# Retrieval tool used by the RAG step below: fetches live results from Tavily
+# when the agent's routing decision determines a query needs current information.
 class WebSearchTool:
     def __init__(self):
         self.client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -80,21 +81,23 @@ def call_gemini(prompt: str, model: str = "gemini-2.5-flash"):
         return f"Unexpected Gemini response format: {e} -- raw: {response.text}"
 
 
-# Agent Logic
+# Agent Logic: the LLM autonomously decides, per query, whether it needs to search
+# the web before answering, then grounds its final answer in the retrieved context (RAG).
 def run_agent(user_query: str, llm_fn=call_llm):
     print(f"\nUser Query: '{user_query}'")
 
-    # LLM decides if it requires a tool
+    # Autonomous routing step: ask the LLM whether it needs real-time info to answer.
     routing_prompt = f"Do this query require real-time information that you do not have access to? If not, does the following query require a real-time web search to answer? Answer only with 'yes' or 'no'.\n\nQuery: {user_query}"
     decision = llm_fn(routing_prompt).strip().lower()
     print(f"LLM Decision: Search required? -> {decision}")
 
-    # search the web if need be.
+    # Only search if the agent decided it needs current information.
     if "yes" in decision:
         search_tool = WebSearchTool()
         search_result = search_tool.execute(user_query)
 
-        # funnel the web result back into the LLM for an answer (RAG)
+        # RAG: fold the retrieved search context back into a second LLM call
+        # so the final answer is grounded in live data instead of the model's own recall.
         final_prompt = (
             "Based on the following context from a web search, please provide a concise answer to the user's query.\n\n"
             f"Context from search:\n"
